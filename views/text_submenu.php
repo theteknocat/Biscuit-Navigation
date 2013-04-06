@@ -17,4 +17,4 @@ foreach ($pages as $page) {
 	}
 	$index++;
 }
-echo implode(" &bull; ", $page_links);
+echo implode("",$page_links);

@@ -5,11 +5,14 @@ if (!empty($pages[$current_parent_id])) {
 	?><ul><?php
 	foreach ($pages[$current_parent_id] as $page) {
 		if ($page->user_can_access() && (!$exclude_items || ($exclude_items && !$page->exclude_from_nav()))) {
-			$link_class = '';
+			$item_class = '';
 			if ($page->id() == $Biscuit->Page->id()) {
-				$link_class = ' class="current"';
+				$item_class .= 'current';
 			}
-			?><li><a href="<?php echo $page->url() ?>"<?php echo $link_class ?>><?php echo __($page->navigation_title()) ?></a><?php
+			if (!empty($pages[$page->id()]) && $with_children) {
+				$item_class .= ' with-submenu';
+			}
+			?><li class="menu-item <?php echo $item_class; ?>"><a href="<?php echo $page->url() ?>"><?php echo __($page->navigation_title()) ?></a><?php
 			if (!empty($pages[$page->id()]) && $with_children) {
 				echo $Navigation->render_pages_hierarchically($pages, $page->id());
 			}

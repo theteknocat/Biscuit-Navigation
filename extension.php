@@ -3,10 +3,11 @@
  * A collection of rendering functions that draw various navigation widgets
  *
  * @package Extensions
+ * @subpackage Navigation
  * @author Peter Epp
  * @copyright Copyright (c) 2009 Peter Epp (http://teknocat.org)
  * @license GNU Lesser General Public License (http://www.gnu.org/licenses/lgpl.html)
- * @version 2.0
+ * @version 2.0 $Id: extension.php 14767 2012-12-18 21:45:44Z teknocat $
  **/
 class Navigation extends AbstractExtension {
 	/**
@@ -60,6 +61,12 @@ class Navigation extends AbstractExtension {
 	 */
 	private $_admin_menu_items = array();
 	/**
+	 * Whether or not admin menu is allowed to render
+	 *
+	 * @var string
+	 */
+	private $_allow_admin_menu = true;
+	/**
 	 * Reference to menu factory object
 	 *
 	 * @var string
@@ -104,12 +111,12 @@ class Navigation extends AbstractExtension {
 	}
 
 	/**
-	 * Render all top-level pages as a string of text links using a view file
+	 * Render all top-level pages in the main menu
 	 *
 	 * @return void
 	 * @author Peter Epp
 	 */
-	public function render_text_mainmenu() {
+	public function render_text_mainmenu($view_file = "navigation/views/text_mainmenu.php") {
 		$pages = $this->Biscuit->page_factory->find_all_by('parent',0,array("sort_order" => "ASC"),'`exclude_from_nav` = 0');
 		if (!empty($pages)) {
 			$view_vars = array(
@@ -118,19 +125,19 @@ class Navigation extends AbstractExtension {
 				"Page" => $this->Biscuit->Page,
 				"Navigation" => $this
 			);
-			return Crumbs::capture_include("navigation/views/text_mainmenu.php", $view_vars);
+			return Crumbs::capture_include($view_file, $view_vars);
 		}
 		return '';
 	}
 
 	/**
-	 * Render all sub-pages of the current page (if any exist) as text links using a view file, either with a default or specified filename
+	 * Render one level of pages of either a specified menu or parent, or the current page if not specified
 	 *
 	 * @return void
 	 * @author Peter Epp
 	 */
 	public function render_text_submenu($menu_name_or_id = "", $view_file = "text_submenu.php") {
-		if (empty($menu_name_or_id)) {
+		if (empty($menu_name_or_id) && $menu_name_or_id !== 0) {
 			$menu_name_or_id = $this->Biscuit->Page->id();
 		}
 		if (is_string($menu_name_or_id)) {
@@ -141,7 +148,7 @@ class Navigation extends AbstractExtension {
 		} else if (is_int($menu_name_or_id)) {
 			$parent_id = $menu_name_or_id;
 		}
-		if (!empty($parent_id)) {
+		if (isset($parent_id)) {
 			$pages = $this->Biscuit->page_factory->find_all_by('parent',$parent_id,array("sort_order" => "ASC"),'`exclude_from_nav` = 0');
 			if ($pages) {
 				$menu = Crumbs::capture_include("navigation/views/".$view_file, array(
@@ -162,12 +169,30 @@ class Navigation extends AbstractExtension {
 	 * @return void
 	 * @author Peter Epp
 	 */
-	function render_bread_crumbs($home_label = null,$separator = "&raquo;") {
-		if ($this->Biscuit->Page->slug() == 'index') {
+	function render_bread_crumbs($home_label = null, $separator = null, $show_current_page_as_last_breadcrumb = null) {
+		if ($this->Biscuit->Page->slug() == 'index' && (!defined('BREADCRUMB_SHOW_ON_HOME_PAGE') || BREADCRUMB_SHOW_ON_HOME_PAGE == 'No')) {
 			return '';
 		}
 		if (empty($home_label)) {
-			$home_label = HOME_TITLE;
+			if (defined('BREADCRUMB_HOME_LABEL') && BREADCRUMB_HOME_LABEL != '') {
+				$home_label = BREADCRUMB_HOME_LABEL;
+			} else {
+				$home_label = 'Home';
+			}
+		}
+		if (empty($separator)) {
+			if (defined('BREADCRUMB_SEPARATOR') && BREADCRUMB_SEPARATOR != '') {
+				$separator = BREADCRUMB_SEPARATOR;
+			} else {
+				$separator = '&raquo;';
+			}
+		}
+		if ($show_current_page_as_last_breadcrumb === null) {
+			if (defined('BREADCRUMB_SHOW_CURRENT_PAGE_AS_LAST') && BREADCRUMB_SHOW_CURRENT_PAGE_AS_LAST != '') {
+				$show_current_page_as_last_breadcrumb = (BREADCRUMB_SHOW_CURRENT_PAGE_AS_LAST == 'Yes') ? true : false;
+			} else {
+				$show_current_page_as_last_breadcrumb = true;
+			}
 		}
 		$curr_page = $this->Biscuit->Page;
 		$other_menu_ids = $this->other_menu_ids();
@@ -193,28 +218,35 @@ class Navigation extends AbstractExtension {
 				$crumb_tags[] = '<a href="/" class="crumb">'.__($home_label).'</a>';
 			}
 			Event::fire('build_breadcrumbs',$this);
-			$last_breadcrumb_is_secure = false;
+			$crumbs_array = array();
+			// Put base crumbs plus extras into a nice array we can use to render them
 			foreach ($crumbs as $crumb) {
-				$crumb_title = $crumb->navigation_title();
-				if ($crumb->id() != $curr_page->id() || !empty($this->_extra_breadcrumbs)) {
-					if ($crumb->force_secure()) {
-						$url = SECURE_URL.'/'.$crumb->slug();
-					} else {
-						$url = STANDARD_URL.'/'.$crumb->slug();
-					}
-					$crumb_tags[] = '<a href="'.$url.'" class="crumb">'.__($crumb_title).'</a>';
+				if ($crumb->slug() == 'index') {
+					$crumb_title = $home_label;
+					$crumb_slug = '';
 				} else {
-					$crumb_tags[] = __($crumb_title);
+					$crumb_title = $crumb->navigation_title();
+					$crumb_slug = $crumb->slug();
 				}
-				$last_breadcrumb_is_secure = $crumb->force_secure();
+				if ($crumb->force_secure()) {
+					$url = SECURE_URL.'/'.$crumb_slug;
+				} else {
+					$url = STANDARD_URL.'/'.$crumb_slug;
+				}
+				$crumbs_array[] = array(
+					'url' => $url,
+					'label' => $crumb_title
+				);
 			}
-			if (!empty($this->_extra_breadcrumbs)) {
-				foreach ($this->_extra_breadcrumbs as $index => $crumb) {
-					if ($index+1 != count($this->_extra_breadcrumbs)) {
-						$crumb_tags[] = '<a href="'.$crumb['url'].'" class="crumb">'.__($crumb['label']).'</a>';
-					} else {
-						$crumb_tags[] = __($crumb['label']);
-					}
+			$crumbs_array = array_merge($crumbs_array, $this->_extra_breadcrumbs);
+			if (!$show_current_page_as_last_breadcrumb) {
+				array_pop($crumbs_array);
+			}
+			foreach ($crumbs_array as $index => $crumb) {
+				if ($index == count($crumbs_array)-1 && $show_current_page_as_last_breadcrumb) {
+					$crumb_tags[] = '<span class="breadcrumb-last">'.__($crumb['label']).'</span>';
+				} else {
+					$crumb_tags[] = '<a href="'.$crumb['url'].'" class="crumb">'.__($crumb['label']).'</a>';
 				}
 			}
 		}
@@ -259,7 +291,7 @@ class Navigation extends AbstractExtension {
 					}
 				}
 			}
-			$this->_top_level_parents[$curr_page->id()] = $page_id;
+			$this->_top_level_parents[$curr_page->id()] = (int)$page_id;
 		}
 		return $this->_top_level_parents[$curr_page->id()];
 	}
@@ -409,7 +441,7 @@ class Navigation extends AbstractExtension {
 	 */
 	private function _menu_factory() {
 		if (empty($this->_menu_factory)) {
-			$this->_menu_factory = new ModelFactory('Menu');
+			$this->_menu_factory = ModelFactory::instance('Menu');
 		}
 		return $this->_menu_factory;
 	}
@@ -422,29 +454,26 @@ class Navigation extends AbstractExtension {
 	 */
 	public function render_admin_bar($module,$model,$options = array()) {
 		$model_name = null;
-		if (!empty($model) && is_object($model)) {
-			$parent_model = get_parent_class($model);
-			if ($parent_model != 'AbstractModel') {
-				$model_name = $parent_model;
-			} else {
-				$model_name = get_class($model);
-			}
+		if (!empty($model)) {
+			$model_name = Crumbs::normalized_model_name($model);
 		}
 		$view_vars['bar_title'] = 'Administration';
 		$view_vars['module'] = $module;
 		$view_vars['model']  = $model;
 		$view_vars['model_name'] = $model_name;
 		$view_vars['has_new_button'] = false;
-		$view_vars['new_button_class'] = '';
+		$view_vars['new_button_class'] = ' class="new-button btn-right"';
 		$view_vars['new_button_id'] = '';
 		$view_vars['new_button_label'] = 'New';
 		$view_vars['has_edit_button'] = false;
-		$view_vars['edit_button_class'] = '';
+		$view_vars['edit_button_class'] = ' class="edit-button btn-right"';
 		$view_vars['edit_button_id'] = '';
 		$view_vars['edit_button_label'] = 'Edit';
 		$view_vars['has_del_button'] = false;
-		$view_vars['del_button_class'] = ' class="delete-button"';
+		$view_vars['del_button_class'] = ' class="delete-button btn-right"';
 		$view_vars['del_button_rel'] = '';
+		$view_vars['del_button_item_type'] = '';
+		$view_vars['del_button_item_title'] = '';
 		$view_vars['del_button_id'] = '';
 		$view_vars['del_button_label'] = 'Delete';
 		if (isset($options['bar_title'])) {
@@ -453,7 +482,7 @@ class Navigation extends AbstractExtension {
 		if (isset($options['has_new_button']) && is_bool($options['has_new_button'])) {
 			$view_vars['has_new_button'] = $options['has_new_button'];
 			if (isset($options['new_button_class'])) {
-				$view_vars['new_button_class'] = ' class="'.$options['new_button_class'].'"';
+				$view_vars['new_button_class'] = ' class="new-button '.$options['new_button_class'].' btn-right"';
 			}
 			if (isset($options['new_button_id'])) {
 				$view_vars['new_button_id'] = ' id="'.$options['new_button_id'].'"';
@@ -465,7 +494,7 @@ class Navigation extends AbstractExtension {
 		if (isset($options['has_edit_button']) && is_bool($options['has_edit_button'])) {
 			$view_vars['has_edit_button'] = $options['has_edit_button'];
 			if (isset($options['edit_button_class'])) {
-				$view_vars['edit_button_class'] = ' class="'.$options['edit_button_class'].'"';
+				$view_vars['edit_button_class'] = ' class="edit-button '.$options['edit_button_class'].' btn-right"';
 			}
 			if (isset($options['edit_button_id'])) {
 				$view_vars['edit_button_id'] = ' id="'.$options['edit_button_id'].'"';
@@ -477,7 +506,7 @@ class Navigation extends AbstractExtension {
 		if (isset($options['has_del_button']) && is_bool($options['has_del_button'])) {
 			$view_vars['has_del_button'] = $options['has_del_button'];
 			if (isset($options['del_button_class'])) {
-				$view_vars['del_button_class'] = ' class="delete-button '.$options['del_button_class'].'"';
+				$view_vars['del_button_class'] = ' class="delete-button '.$options['del_button_class'].' btn-right"';
 			}
 			if (isset($options['del_button_id'])) {
 				$view_vars['del_button_id'] = ' id="'.$options['del_button_id'].'"';
@@ -485,8 +514,15 @@ class Navigation extends AbstractExtension {
 			if (isset($options['del_button_label'])) {
 				$view_vars['del_button_label'] = $options['del_button_label'];
 			}
-			if (isset($options['del_button_rel'])) {
-				$view_vars['del_button_rel'] = ' rel="'.$options['del_button_rel'].'"';
+			if (isset($options['del_button_item_type']) || isset($options['del_button_item_title'])) {
+				if (isset($options['del_button_item_type'])) {
+					$view_vars['del_button_item_type'] = ' data-item-type="'.htmlspecialchars($options['del_button_item_type']).'"';
+				}
+				if (isset($options['del_button_item_title'])) {
+					$view_vars['del_button_item_title'] = ' data-item-title="'.htmlspecialchars($options['del_button_item_title']).'"';
+				}
+			} else if (isset($options['del_button_rel'])) {
+				$view_vars['del_button_rel'] = ' rel="'.htmlspecialchars($options['del_button_rel']).'"';
 			}
 		}
 		if (!empty($options['custom_buttons']) && is_array($options['custom_buttons'])) {
@@ -501,8 +537,7 @@ class Navigation extends AbstractExtension {
 	 * @author Peter Epp
 	 */
 	public function render_locale_switcher() {
-		$locale_factory = new LocaleFactory();
-		$all_locales = $locale_factory->find_all(array('friendly_name' => 'ASC'));
+		$all_locales = ModelFactory::instance('Locale')->find_all(array('friendly_name' => 'ASC'));
 		return Crumbs::capture_include('navigation/views/locale_switcher.php',array('all_locales' => $all_locales));
 	}
 	/**
@@ -528,13 +563,16 @@ class Navigation extends AbstractExtension {
 			// Use the Page model to get the page link name:
 			$page = $this->Biscuit->page_factory->find_by('slug', $biscuit_page_slug);
 			$extras = ' id="'.$link_id.'"';
+			if ($this->Biscuit->Page->id() == $page->id()) {
+				$css_class .= ' current';
+			}
 			if (!empty($css_class)) {
 				$extras .= ' class="'.$css_class.'"';
 			}
 			if (!empty($inline_style)) {
 				$extras .= ' style="'.$inline_style.'"';
 			}
-			$links .= '<a href="'.(($page->force_secure()) ? SECURE_URL : STANDARD_URL).$url.'"'.$extras.'>'.__($page->title()).'</a>';
+			$links .= '<a href="'.(($page->force_secure()) ? SECURE_URL : STANDARD_URL).$url.'?ref_page='.rawurlencode(Request::uri()).'"'.$extras.'>'.__($page->title()).'</a>';
 		}
 		if ($this->Biscuit->ModuleAuthenticator()->user_is_logged_in()) {
 			if (!empty($links)) {
@@ -556,11 +594,10 @@ class Navigation extends AbstractExtension {
 			return STANDARD_URL.'/';
 		}
 		$external = false;
-		$page_factory = new ModelFactory('Page');
 		if (is_int($page_slug_or_id)) {
-			$page = $page_factory->find_by('id',$page_slug_or_id);
+			$page = ModelFactory::instance('Page')->find_by('id',$page_slug_or_id);
 		} else if (is_string($page_slug_or_id)) {
-			$page = $page_factory->find_by('slug',$page_slug_or_id);
+			$page = ModelFactory::instance('Page')->find_by('slug',$page_slug_or_id);
 		}
 		if ($page->ext_link()) {
 			$external = true;
@@ -598,8 +635,7 @@ class Navigation extends AbstractExtension {
 	 */
 	public function all_pages() {
 		if (empty($this->_pages)) {
-			$page_factory = new ModelFactory('Page');
-			$this->_pages = $page_factory->find_all();
+			$this->_pages = ModelFactory::instance('Page')->find_all();
 		}
 		return $this->_pages;
 	}
@@ -627,9 +663,10 @@ class Navigation extends AbstractExtension {
 	 * @author Peter Epp
 	 */
 	public function render_admin_menu() {
-		if ($this->Biscuit->ModuleAuthenticator()->user_is_logged_in() && $this->Biscuit->Page->slug() != 'system-admin') {
+		if ($this->Biscuit->ModuleAuthenticator()->user_is_logged_in()) {
 			Event::fire('build_admin_menu',$this);
-			if (!empty($this->_admin_menu_items)) {
+			if ($this->_allow_admin_menu && !empty($this->_admin_menu_items)) {
+				ksort($this->_admin_menu_items);
 				return Crumbs::capture_include('navigation/views/admin-menu.php',array('menu_items' => $this->_admin_menu_items));
 			}
 		}
@@ -645,6 +682,15 @@ class Navigation extends AbstractExtension {
 	 */
 	public function add_admin_menu_items($menu_name,$items) {
 		$this->_admin_menu_items[$menu_name] = $items;
+	}
+	/**
+	 * Prevent rendering of admin menu
+	 *
+	 * @return void
+	 * @author Peter Epp
+	 */
+	public function prevent_admin_menu() {
+		$this->_allow_admin_menu = false;
 	}
 	/**
 	 * Compile a list of the ids of other menus
@@ -669,7 +715,7 @@ class Navigation extends AbstractExtension {
 	 * @author Peter Epp
 	 */
 	protected function act_on_dispatch_request() {
-		if ($this->Biscuit->ModuleAuthenticator()->user_is_logged_in() && $this->Biscuit->Page->slug() != 'system-admin') {
+		if ($this->Biscuit->ModuleAuthenticator()->user_is_logged_in()) {
 			$this->register_css(array('filename' => 'admin-menu.css', 'media' => 'screen'));
 			$this->register_js('footer','admin-menu.js');
 		}

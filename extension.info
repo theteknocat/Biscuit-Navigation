@@ -1,0 +1,4 @@
+name = "Navigation"
+description = "A core extension that provides a variety of navigation functions - both getting hierarchical page navigation data as well as rendering various menus."
+version = "2.2"
+is_global = 1
