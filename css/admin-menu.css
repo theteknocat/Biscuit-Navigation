@@ -1,0 +1,35 @@
+#biscuit-admin-menu {
+	position: absolute;
+	z-index: 500;
+	left: 0;
+	top: 0;
+	width: 170px;
+	display: none;
+}
+
+#biscuit-admin-menu #biscuit-admin-menu-top-level {
+	width: 170px;
+}
+#biscuit-admin-menu #biscuit-admin-menu-top-level.ui-accordion .ui-accordion-content {
+	padding: 2px 2px 1px;
+}
+#biscuit-admin-menu .biscuit-admin-menu-items {
+	margin: 0;
+	list-style: none;
+}
+#biscuit-admin-menu .biscuit-admin-menu-items li a,
+#biscuit-admin-menu .biscuit-admin-menu-items li a:active,
+#biscuit-admin-menu .biscuit-admin-menu-items li a:visited,
+#biscuit-admin-menu .biscuit-admin-menu-items li a:focus {
+	display: block;
+	font-size: 10px;
+	padding: 5px;
+	background: #ccc;
+	color: #333;
+	margin: 0 0 1px;
+	text-decoration: none;
+}
+#biscuit-admin-menu .biscuit-admin-menu-items li a:hover {
+	background: #aaa;
+	text-decoration: none;
+}

@@ -9,7 +9,7 @@ if (!empty($pages[$current_parent_id])) {
 			if ($page->id() == $Biscuit->Page->id()) {
 				$link_class = ' class="current"';
 			}
-			?><li><a href="<?php echo $page->url() ?>"<?php echo $link_class ?>><?php echo $page->title() ?></a><?php
+			?><li><a href="<?php echo $page->url() ?>"<?php echo $link_class ?>><?php echo __($page->navigation_title()) ?></a><?php
 			if (!empty($pages[$page->id()]) && $with_children) {
 				echo $Navigation->render_pages_hierarchically($pages, $page->id());
 			}
@@ -18,4 +18,3 @@ if (!empty($pages[$current_parent_id])) {
 	}
 	?></ul><?php
 }
-?>

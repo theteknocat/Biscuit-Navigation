@@ -13,11 +13,8 @@ foreach ($pages as $page) {
 		if (!empty($classes)) {
 			$classes = ' class="'.$classes.'"';
 		}
-		if (Permissions::can_access((int)$page->access_level())) {
-			$page_links[] = '<a href="'.$page->url().'" id="link_'.$page->hyphenized_slug().'"'.$classes.'>'.$page->title().'</a>';
-		}
+		$page_links[] = '<a href="'.$page->url().'" id="link_'.$page->hyphenized_slug().'"'.$classes.'>'.__($page->navigation_title()).'</a>';
 	}
 	$index++;
 }
 echo implode(" &bull; ", $page_links);
-?>

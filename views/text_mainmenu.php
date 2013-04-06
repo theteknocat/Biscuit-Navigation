@@ -13,18 +13,15 @@ foreach ($pages as $page) {
 		if (!empty($classes)) {
 			$classes = ' class="'.$classes.'"';
 		}
-		if (Permissions::can_access((int)$page->access_level())) {
-			$page_links[] = '<a href="'.$page->url().'" id="link_'.$page->hyphenized_slug().'"'.$classes.'>'.$page->title().'</a>';
-		}
+		$page_links[] = '<a href="'.$page->url().'" id="link_'.$page->hyphenized_slug().'"'.$classes.'>'.__($page->navigation_title()).'</a>';
 	}
 	$index++;
 }
 echo implode(" &bull; ",$page_links);
 ?> &bull; <?php
 if ($Biscuit->ModuleAuthenticator()->user_is_logged_in()) {
-	?><a href="<?php echo $Page->logout_url() ?>">Logout</a><?php
+	?><a href="<?php echo $Page->logout_url() ?>"><?php echo __("Logout") ?></a><?php
 }
 else {
-	?><a href="/login?ref_page=/<?php echo $Page->slug(); ?>" id="login">Login</a><?php
+	?><a href="/login?ref_page=/<?php echo $Page->slug(); ?>" id="login"><?php echo __("Login") ?></a><?php
 }
-?>

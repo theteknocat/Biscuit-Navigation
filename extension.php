@@ -54,14 +54,27 @@ class Navigation extends AbstractExtension {
 	 */
 	private $_menu_exclude_items = true;
 	/**
+	 * Array of items for the administration menu
+	 *
+	 * @var array
+	 */
+	private $_admin_menu_items = array();
+	/**
+	 * Reference to menu factory object
+	 *
+	 * @var string
+	 */
+	private $_menu_factory;
+	/**
 	 * Ensure that extension gets instantiated
 	 *
 	 * @return void
 	 * @author Peter Epp
 	 */
 	public function run() {
-		// Noop.  This just here to ensure that it gets instantiated
+		// Noop. Force instantiation
 	}
+	
 	/**
 	 * Set whether or not to exclude items from menus that are set to be excluded in the page_index table. This method is for use by
 	 * other modules/extensions that call render_pages_hierarchically() directly rather than using the menu methods provided by this extension.
@@ -116,12 +129,20 @@ class Navigation extends AbstractExtension {
 	 * @return void
 	 * @author Peter Epp
 	 */
-	public function render_text_submenu($page_id = "", $view_file = "text_submenu.php") {
-		if (empty($page_id)) {
-			$page_id = $this->Biscuit->Page->id();
+	public function render_text_submenu($menu_name_or_id = "", $view_file = "text_submenu.php") {
+		if (empty($menu_name_or_id)) {
+			$menu_name_or_id = $this->Biscuit->Page->id();
 		}
-		if ($page_id != 0) {
-			$pages = $this->Biscuit->page_factory->find_all_by('parent',$page_id,array("sort_order" => "ASC"),'`exclude_from_nav` = 0');
+		if (is_string($menu_name_or_id)) {
+			$menu = $this->_menu_factory()->find_by('var_name',$menu_name_or_id);
+			if ($menu) {
+				$parent_id = $menu->id();
+			}
+		} else if (is_int($menu_name_or_id)) {
+			$parent_id = $menu_name_or_id;
+		}
+		if (!empty($parent_id)) {
+			$pages = $this->Biscuit->page_factory->find_all_by('parent',$parent_id,array("sort_order" => "ASC"),'`exclude_from_nav` = 0');
 			if ($pages) {
 				$menu = Crumbs::capture_include("navigation/views/".$view_file, array(
 					"pages" => $pages,
@@ -132,6 +153,7 @@ class Navigation extends AbstractExtension {
 				return $menu;
 			}
 		}
+		return '';
 	}
 	/**
 	 * Render breadcrumbs from the home page to the current page.
@@ -168,35 +190,30 @@ class Navigation extends AbstractExtension {
 			$crumbs = array_values($crumbs);
 			// Now build array of links from the array of page models:
 			if ($curr_page->slug() != 'index') {
-				$crumb_tags[] = '<a href="/" class="crumb">'.$home_label.'</a>';
+				$crumb_tags[] = '<a href="/" class="crumb">'.__($home_label).'</a>';
 			}
 			Event::fire('build_breadcrumbs',$this);
 			$last_breadcrumb_is_secure = false;
 			foreach ($crumbs as $crumb) {
+				$crumb_title = $crumb->navigation_title();
 				if ($crumb->id() != $curr_page->id() || !empty($this->_extra_breadcrumbs)) {
 					if ($crumb->force_secure()) {
 						$url = SECURE_URL.'/'.$crumb->slug();
 					} else {
 						$url = STANDARD_URL.'/'.$crumb->slug();
 					}
-					$crumb_tags[] = '<a href="'.$url.'" class="crumb">'.$crumb->title().'</a>';
+					$crumb_tags[] = '<a href="'.$url.'" class="crumb">'.__($crumb_title).'</a>';
 				} else {
-					$crumb_tags[] = $crumb->title();
+					$crumb_tags[] = __($crumb_title);
 				}
 				$last_breadcrumb_is_secure = $crumb->force_secure();
 			}
 			if (!empty($this->_extra_breadcrumbs)) {
 				foreach ($this->_extra_breadcrumbs as $index => $crumb) {
 					if ($index+1 != count($this->_extra_breadcrumbs)) {
-						// Since extra breadcrumbs will be sub-crumbs of the current page (such as action-based crumbs), we use the secure URL if the
-						// last breadcrumb was secure, otherwise standard
-						if ($last_breadcrumb_is_secure) {
-							$url = SECURE_URL.'/'.$crumb['url'];
-						} else {
-							$url = STANDARD_URL.'/'.$crumb['url'];
-						}
+						$crumb_tags[] = '<a href="'.$crumb['url'].'" class="crumb">'.__($crumb['label']).'</a>';
 					} else {
-						$crumb_tags[] = $crumb['label'];
+						$crumb_tags[] = __($crumb['label']);
 					}
 				}
 			}
@@ -317,8 +334,7 @@ class Navigation extends AbstractExtension {
 	 */
 	public function render_pages_hierarchically($pages, $current_parent_name_or_id = 0, $with_children = true, $view_file = 'navigation/views/list_menu.php',$extra_view_vars = array()) {
 		if (is_string($current_parent_name_or_id) && preg_match('/([a-z_]+)/',$current_parent_name_or_id)) {
-			$menu_factory = new ModelFactory('Menu');
-			$menu = $menu_factory->find_by('var_name',$current_parent_name_or_id);
+			$menu = $this->_menu_factory()->find_by('var_name',$current_parent_name_or_id);
 			if (empty($menu)) {
 				throw new ExtensionException("Invalid parent menu ID for rendering menu hierarchically: ".$current_parent_name_or_id);
 			}
@@ -386,6 +402,18 @@ class Navigation extends AbstractExtension {
 		return 'stripe-'.$this->tiger_stripe_states[$list_name];
 	}
 	/**
+	 * Return a reference to menu factory object, instantiating if empty
+	 *
+	 * @return void
+	 * @author Peter Epp
+	 */
+	private function _menu_factory() {
+		if (empty($this->_menu_factory)) {
+			$this->_menu_factory = new ModelFactory('Menu');
+		}
+		return $this->_menu_factory;
+	}
+	/**
 	 * Render an administration control bar, for actions like 'new' at the top of an index page, for example
 	 *
 	 * @param object $module A reference to the module object
@@ -393,9 +421,19 @@ class Navigation extends AbstractExtension {
 	 * @author Peter Epp
 	 */
 	public function render_admin_bar($module,$model,$options = array()) {
+		$model_name = null;
+		if (!empty($model) && is_object($model)) {
+			$parent_model = get_parent_class($model);
+			if ($parent_model != 'AbstractModel') {
+				$model_name = $parent_model;
+			} else {
+				$model_name = get_class($model);
+			}
+		}
 		$view_vars['bar_title'] = 'Administration';
 		$view_vars['module'] = $module;
 		$view_vars['model']  = $model;
+		$view_vars['model_name'] = $model_name;
 		$view_vars['has_new_button'] = false;
 		$view_vars['new_button_class'] = '';
 		$view_vars['new_button_id'] = '';
@@ -457,13 +495,24 @@ class Navigation extends AbstractExtension {
 		return Crumbs::capture_include('navigation/views/admin_bar.php',$view_vars);
 	}
 	/**
+	 * Render a locale switcher widget from a view
+	 *
+	 * @return void
+	 * @author Peter Epp
+	 */
+	public function render_locale_switcher() {
+		$locale_factory = new LocaleFactory();
+		$all_locales = $locale_factory->find_all(array('friendly_name' => 'ASC'));
+		return Crumbs::capture_include('navigation/views/locale_switcher.php',array('all_locales' => $all_locales));
+	}
+	/**
 	 * Return the HTML markup for a link to either login or go to the user's home page, depending on whether or not a user is currently logged in.
 	 *
 	 * @param $css_class string Optional - a CSS class name (or names separated by spaces) to apply to the anchor tag
 	 * @param $inline_style string Optional - inline styles to apply to the anchor tag
 	 * @return string Anchor tag markup
 	 */
-	public function login_link($separator = "", $css_class = "") {
+	public function login_link($separator = " | ", $css_class = "") {
 		if ($this->Biscuit->ModuleAuthenticator()->user_is_logged_in()) {
 			$url = $this->Biscuit->ModuleAuthenticator()->user_home_url();
 			$link_id = 'nav-user-home-link';
@@ -485,15 +534,61 @@ class Navigation extends AbstractExtension {
 			if (!empty($inline_style)) {
 				$extras .= ' style="'.$inline_style.'"';
 			}
-			$links .= '<a href="'.(($page->force_secure()) ? SECURE_URL : STANDARD_URL).$url.'"'.$extras.'>'.$page->title().'</a>';
+			$links .= '<a href="'.(($page->force_secure()) ? SECURE_URL : STANDARD_URL).$url.'"'.$extras.'>'.__($page->title()).'</a>';
 		}
 		if ($this->Biscuit->ModuleAuthenticator()->user_is_logged_in()) {
 			if (!empty($links)) {
 				$links .= $separator;
 			}
-			$links .= '<a id="nav-user-logout-link" href="'.$this->Biscuit->Page->logout_url().'"'.$extras.'>Logout</a>';
+			$links .= '<a id="nav-user-logout-link" href="'.$this->Biscuit->Page->logout_url().'"'.$extras.'>'.__('Logout').'</a>';
 		}
 		return $links;
+	}
+	/**
+	 * Return the fully qualified URL for any given page
+	 *
+	 * @param string $page_slug_or_id Either the canonical ID or slug for the page
+	 * @param bool $with_logout Optional. Whether or not to make it a logout URL that will redirect back to the page after logging out
+	 * @return string
+	**/
+	public function url($page_slug_or_id, $with_logout = false) {
+		if (empty($page_slug_or_id)) {
+			return STANDARD_URL.'/';
+		}
+		$external = false;
+		$page_factory = new ModelFactory('Page');
+		if (is_int($page_slug_or_id)) {
+			$page = $page_factory->find_by('id',$page_slug_or_id);
+		} else if (is_string($page_slug_or_id)) {
+			$page = $page_factory->find_by('slug',$page_slug_or_id);
+		}
+		if ($page->ext_link()) {
+			$external = true;
+			$page_url = $page->ext_link();
+		} else {
+			if ($page->slug() == 'index') {
+				$page_url = '';
+			} else {
+				$page_url = '/'.$page->slug();
+			}
+		}
+		if (!$external) {
+			if ($with_logout) {
+				$page_url .= "/logout";
+			}
+			$page_url = (($page->force_secure()) ? SECURE_URL : STANDARD_URL).$page_url;
+		}
+		return $page_url;
+	}
+	/**
+	 * Return a canonical page URL relative to the site root for a given page ID
+	 *
+	 * @param int $page_id Canonical ID of the page to be linked
+	 * @return string
+	 * @author Peter Epp
+	 */
+	public function canonical_url($page_id) {
+		return '/canonical-page-link/'.$page_id.'/';
 	}
 	/**
 	 * Fetch and cache all pages on the object and return them
@@ -516,8 +611,7 @@ class Navigation extends AbstractExtension {
 	 */
 	public function other_menus() {
 		if ($this->_other_menus == null) {
-			$menu_factory = new ModelFactory('Menu');
-			$other_menus = $menu_factory->find_all(array('name' => 'ASC'));
+			$other_menus = $this->_menu_factory()->find_all(array('name' => 'ASC'));
 			if (empty($other_menus)) {
 				$this->_other_menus = array();
 			} else {
@@ -525,6 +619,32 @@ class Navigation extends AbstractExtension {
 			}
 		}
 		return $this->_other_menus;
+	}
+	/**
+	 * Render common administration menu for logged in users
+	 *
+	 * @return void
+	 * @author Peter Epp
+	 */
+	public function render_admin_menu() {
+		if ($this->Biscuit->ModuleAuthenticator()->user_is_logged_in() && $this->Biscuit->Page->slug() != 'system-admin') {
+			Event::fire('build_admin_menu',$this);
+			if (!empty($this->_admin_menu_items)) {
+				return Crumbs::capture_include('navigation/views/admin-menu.php',array('menu_items' => $this->_admin_menu_items));
+			}
+		}
+		return '';
+	}
+	/**
+	 * Add a set of menu items to the admin menu item list
+	 *
+	 * @param string $menu_name 
+	 * @param string $items 
+	 * @return void
+	 * @author Peter Epp
+	 */
+	public function add_admin_menu_items($menu_name,$items) {
+		$this->_admin_menu_items[$menu_name] = $items;
 	}
 	/**
 	 * Compile a list of the ids of other menus
@@ -541,6 +661,27 @@ class Navigation extends AbstractExtension {
 			}
 		}
 		return $other_menu_ids;
+	}
+	/**
+	 * On request dispatch, register admin menu CSS and JS if user is logged in. We can't do this on run because Authenticator isn't available at that point
+	 *
+	 * @return void
+	 * @author Peter Epp
+	 */
+	protected function act_on_dispatch_request() {
+		if ($this->Biscuit->ModuleAuthenticator()->user_is_logged_in() && $this->Biscuit->Page->slug() != 'system-admin') {
+			$this->register_css(array('filename' => 'admin-menu.css', 'media' => 'screen'));
+			$this->register_js('footer','admin-menu.js');
+		}
+	}
+	/**
+	 * Render admin menu. Will only render if user is logged in
+	 *
+	 * @return void
+	 * @author Peter Epp
+	 */
+	protected function act_on_compile_footer() {
+		$this->Biscuit->append_view_var('footer',$this->render_admin_menu());
 	}
 }
 ?>
